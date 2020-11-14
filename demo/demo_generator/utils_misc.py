@@ -81,28 +81,34 @@ def make_color_wheel():
     col += RY
 
     # YG
-    colorwheel[col:col + YG, 0] = 255 - np.transpose(np.floor(255 * np.arange(0, YG) / YG))
-    colorwheel[col:col + YG, 1] = 255
+    colorwheel[col : col + YG, 0] = 255 - np.transpose(
+        np.floor(255 * np.arange(0, YG) / YG)
+    )
+    colorwheel[col : col + YG, 1] = 255
     col += YG
 
     # GC
-    colorwheel[col:col + GC, 1] = 255
-    colorwheel[col:col + GC, 2] = np.transpose(np.floor(255 * np.arange(0, GC) / GC))
+    colorwheel[col : col + GC, 1] = 255
+    colorwheel[col : col + GC, 2] = np.transpose(np.floor(255 * np.arange(0, GC) / GC))
     col += GC
 
     # CB
-    colorwheel[col:col + CB, 1] = 255 - np.transpose(np.floor(255 * np.arange(0, CB) / CB))
-    colorwheel[col:col + CB, 2] = 255
+    colorwheel[col : col + CB, 1] = 255 - np.transpose(
+        np.floor(255 * np.arange(0, CB) / CB)
+    )
+    colorwheel[col : col + CB, 2] = 255
     col += CB
 
     # BM
-    colorwheel[col:col + BM, 2] = 255
-    colorwheel[col:col + BM, 0] = np.transpose(np.floor(255 * np.arange(0, BM) / BM))
-    col += + BM
+    colorwheel[col : col + BM, 2] = 255
+    colorwheel[col : col + BM, 0] = np.transpose(np.floor(255 * np.arange(0, BM) / BM))
+    col += +BM
 
     # MR
-    colorwheel[col:col + MR, 2] = 255 - np.transpose(np.floor(255 * np.arange(0, MR) / MR))
-    colorwheel[col:col + MR, 0] = 255
+    colorwheel[col : col + MR, 2] = 255 - np.transpose(
+        np.floor(255 * np.arange(0, MR) / MR)
+    )
+    colorwheel[col : col + MR, 0] = 255
 
     return colorwheel
 
@@ -118,10 +124,10 @@ def flow_to_png_middlebury(flow):
     u = flow[:, :, 0]
     v = flow[:, :, 1]
 
-    maxu = -999.
-    maxv = -999.
-    minu = 999.
-    minv = 999.
+    maxu = -999.0
+    maxv = -999.0
+    minu = 999.0
+    minv = 999.0
 
     idxUnknow = (abs(u) > UNKNOWN_FLOW_THRESH) | (abs(v) > UNKNOWN_FLOW_THRESH)
     u[idxUnknow] = 0
@@ -134,7 +140,7 @@ def flow_to_png_middlebury(flow):
     minv = min(minv, np.min(v))
 
     rad = np.sqrt(u ** 2 + v ** 2)
-    maxrad = max(-1, np.max(rad)) 
+    maxrad = max(-1, np.max(rad))
     # maxrad = 4
 
     u = u / (maxrad + np.finfo(float).eps)
@@ -149,7 +155,7 @@ def flow_to_png_middlebury(flow):
 
 
 def numpy2torch(array):
-    assert(isinstance(array, np.ndarray))
+    assert isinstance(array, np.ndarray)
     if array.ndim == 3:
         array = np.transpose(array, (2, 0, 1))
     else:
@@ -157,38 +163,86 @@ def numpy2torch(array):
     return torch.from_numpy(array.copy()).float()
 
 
-def get_pixelgrid(b, h, w, flow=None):
+def get_pixelgrid(b, h, w, flow=None, direction="forward"):
 
+    # get heterogeneous coordinates pixel grid
+    """generate heterogeneous coord pixel grid
+
+    Returns:
+        [torch.Tensor]: heterogenous coordinates pixel grid
+    """
+    assert direction in ["forward", "backward"]
     grid_h = torch.linspace(0.0, w - 1, w).view(1, 1, 1, w).expand(b, 1, h, w)
-    grid_v = torch.linspace(0.0, h - 1, h).view(1, 1, h, 1).expand(b, 1, h, w)    
+    grid_v = torch.linspace(0.0, h - 1, h).view(1, 1, h, 1).expand(b, 1, h, w)
     ones = torch.ones_like(grid_h)
 
     if flow is None:
-        pixelgrid = torch.cat((grid_h, grid_v, ones), dim=1).float().requires_grad_(False)
+        pixelgrid = (
+            torch.cat((grid_h, grid_v, ones), dim=1).float().requires_grad_(False)
+        )
     else:
-        pixelgrid = torch.cat((grid_h + flow[:, 0:1, :, :], grid_v + flow[:, 1:2, :, :], ones), dim=1).float().requires_grad_(False)
-    
+        if direction == "backward":
+            flow = -flow
+        pixelgrid = (
+            torch.cat(
+                (grid_h + flow[:, 0:1, :, :], grid_v + flow[:, 1:2, :, :], ones), dim=1
+            )
+            .float()
+            .requires_grad_(False)
+        )
+
     return pixelgrid
 
 
 def pixel2pts(depth, intrinsic, flow=None):
-    
-    b, _, h, w = depth.size()    
+
+    b, _, h, w = depth.size()
+    # * get heterogenous coordinates
     pixelgrid = get_pixelgrid(b, h, w, flow)
 
-    depth_mat = depth.view(b, 1, -1)    
+    depth_mat = depth.view(b, 1, -1)
     pixel_mat = pixelgrid.view(b, 3, -1)
 
+    # * back-projection
     pts_mat = torch.matmul(torch.inverse(intrinsic), pixel_mat) * depth_mat
 
     pts = pts_mat.view(b, -1, h, w)
 
     return pts, pixelgrid
 
+
+def pts2pixel(pts, intrinsics, flow=None):
+    """K @ Pts and normalize by dividing channel w. output 2D coordinates in camera world"""
+    """[summary]
+
+    Returns:
+        torch.Tensor: 2D coordinates of pixel world
+    """
+    b, _, h, w = pts.size()
+    proj_pts = torch.matmul(intrinsics, pts.view(b, 3, -1))
+    pixels_mat = proj_pts.div(proj_pts[:, 2:3, :] + 1e-8)[:, 0:2, :]  # devide w
+
+    return pixels_mat.view(b, 2, h, w)
+
+
+def pts2pixel_ms(intrinsic, pts, flow, disp_size):
+
+    sf_s = tf.interpolate(flow, disp_size, mode="bilinear", align_corners=True)
+    pts_tform = pts + sf_s
+    coord = pts2pixel(pts_tform, intrinsic)
+    # * normalize grid into [-1,1]
+    norm_coord_w = coord[:, 0:1, :, :] / (disp_size[1] - 1) * 2 - 1
+    norm_coord_h = coord[:, 1:2, :, :] / (disp_size[0] - 1) * 2 - 1
+    norm_coord = torch.cat((norm_coord_w, norm_coord_h), dim=1)
+
+    return sf_s, pts_tform, norm_coord
+
+
 def disp2depth_kitti(pred_disp, focal_length):
     pred_depth = focal_length * 0.54 / pred_disp
     pred_depth = torch.clamp(pred_depth, 1e-3, 80)
     return pred_depth
+
 
 def pixel2pts_ms(output_disp, intrinsic, flow=None):
     focal_length = intrinsic[:, 0, 0]
@@ -198,8 +252,16 @@ def pixel2pts_ms(output_disp, intrinsic, flow=None):
 
 
 def get_grid(x):
-    grid_H = torch.linspace(-1.0, 1.0, x.size(3)).view(1, 1, 1, x.size(3)).expand(x.size(0), 1, x.size(2), x.size(3))
-    grid_V = torch.linspace(-1.0, 1.0, x.size(2)).view(1, 1, x.size(2), 1).expand(x.size(0), 1, x.size(2), x.size(3))
+    grid_H = (
+        torch.linspace(-1.0, 1.0, x.size(3))
+        .view(1, 1, 1, x.size(3))
+        .expand(x.size(0), 1, x.size(2), x.size(3))
+    )
+    grid_V = (
+        torch.linspace(-1.0, 1.0, x.size(2))
+        .view(1, 1, x.size(2), 1)
+        .expand(x.size(0), 1, x.size(2), x.size(3))
+    )
     grid = torch.cat([grid_H, grid_V], 1)
     grids_cuda = grid.float().requires_grad_(False)
     return grids_cuda
@@ -212,22 +274,19 @@ def read_png_depth(depth_file):
     return disp_np
 
 
-
 def read_png_flow(flow_file):
     flow_object = png.Reader(filename=flow_file)
     flow_direct = flow_object.asDirect()
     flow_data = list(flow_direct[2])
-    (w, h) = flow_direct[3]['size']
+    (w, h) = flow_direct[3]["size"]
     flow = np.zeros((h, w, 3), dtype=np.float64)
     for i in range(len(flow_data)):
         flow[i, :, 0] = flow_data[i][0::3]
         flow[i, :, 1] = flow_data[i][1::3]
         flow[i, :, 2] = flow_data[i][2::3]
 
-    invalid_idx = (flow[:, :, 2] == 0)
+    invalid_idx = flow[:, :, 2] == 0
     flow[:, :, 0:2] = (flow[:, :, 0:2] - 2 ** 15) / 64.0
     flow[invalid_idx, 0] = 0
     flow[invalid_idx, 1] = 0
     return flow[:, :, 0:2]
-
-

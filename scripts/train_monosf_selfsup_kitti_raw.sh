@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # experiments and datasets meta
-KITTI_RAW_HOME=""
-EXPERIMENTS_HOME=""
+EXPERIMENTS_HOME="EXP_DIR"
+KITTI_RAW_HOME="/mnt/lustre/yslan/Dataset/KITTI"
+KITTI_HOME="/mnt/lustre/yslan/Dataset/KITTI/"
 
 # model
 MODEL=MonoSceneFlow_fullmodel
@@ -24,7 +25,7 @@ Valid_Loss_Function=Loss_SceneFlow_SelfSup
 
 # training configuration
 python ../main.py \
---batch_size=4 \
+--batch_size=2 \
 --batch_size_val=1 \
 --checkpoint=$CHECKPOINT \
 --lr_scheduler=MultiStepLR \

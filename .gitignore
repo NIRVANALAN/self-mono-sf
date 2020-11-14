@@ -3,3 +3,6 @@
 *.o
 *.egg
 *.egg-info/
+*build*
+eval
+EXP_DIR

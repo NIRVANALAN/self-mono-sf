@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # DATASETS_HOME
-KITTI_HOME=""
+KITTI_RAW_HOME="/mnt/lustre/yslan/Dataset/KITTI"
+KITTI_HOME="/mnt/lustre/yslan/Dataset/KITTI/"
 CHECKPOINT="checkpoints/full_model_kitti_ft/checkpoint_kitti_ft.ckpt"
 
 # model
@@ -27,6 +28,6 @@ python ../main.py \
 --validation_dataset_root=$KITTI_HOME \
 --validation_loss=$Valid_Loss_Function \
 --validation_key=sf \
-# --save_disp=True \
-# --save_disp2=True \
-# --save_flow=True
+--save_disp=True \
+--save_disp2=True \
+--save_flow=True

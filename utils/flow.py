@@ -1,4 +1,5 @@
 from __future__ import absolute_import, division, print_function
+import pdb
 
 import numpy as np
 import png
@@ -11,20 +12,28 @@ UNKNOWN_FLOW_THRESH = 1e7
 
 def write_depth_png(filename, disp_map):
 
-    io.imsave(filename, (disp_map * 256.0).astype(np.uint16)) 
+    io.imsave(filename, (disp_map * 256.0).astype(np.uint16))
+
+
+def load_depth_png(filename):
+    disp = io.imread(filename)
+    return disp / 256
 
 
 def write_flow_png(filename, uv, v=None, mask=None):
 
+    import pdb
+
+    pdb.set_trace()
     if v is None:
-        assert (uv.ndim == 3)
-        assert (uv.shape[2] == 2)
+        assert uv.ndim == 3
+        assert uv.shape[2] == 2
         u = uv[:, :, 0]
         v = uv[:, :, 1]
     else:
         u = uv
 
-    assert (u.shape == v.shape)
+    assert u.shape == v.shape
 
     height_img, width_img = u.shape
     if mask is None:
@@ -34,12 +43,19 @@ def write_flow_png(filename, uv, v=None, mask=None):
 
     flow_u = np.clip((u * 64 + 2 ** 15), 0.0, 65535.0).astype(np.uint16)
     flow_v = np.clip((v * 64 + 2 ** 15), 0.0, 65535.0).astype(np.uint16)
-    
-    output = np.stack((flow_u, flow_v, valid_mask), axis=-1)
 
-    with open(filename, 'wb') as f:
+    output = np.stack((flow_u, flow_v, valid_mask), axis=-1)
+    import pdb
+
+    pdb.set_trace()
+
+    with open(filename, "wb") as f:
         writer = png.Writer(width=width_img, height=height_img, bitdepth=16)
-        writer.write(f, np.reshape(output, (-1, width_img*3)))
+        writer.write(f, np.reshape(output, (-1, width_img * 3)))
+
+
+def load_sf_png(filename):
+    pass
 
 
 def compute_color(u, v):
@@ -110,28 +126,34 @@ def make_color_wheel():
     col += RY
 
     # YG
-    colorwheel[col:col + YG, 0] = 255 - np.transpose(np.floor(255 * np.arange(0, YG) / YG))
-    colorwheel[col:col + YG, 1] = 255
+    colorwheel[col : col + YG, 0] = 255 - np.transpose(
+        np.floor(255 * np.arange(0, YG) / YG)
+    )
+    colorwheel[col : col + YG, 1] = 255
     col += YG
 
     # GC
-    colorwheel[col:col + GC, 1] = 255
-    colorwheel[col:col + GC, 2] = np.transpose(np.floor(255 * np.arange(0, GC) / GC))
+    colorwheel[col : col + GC, 1] = 255
+    colorwheel[col : col + GC, 2] = np.transpose(np.floor(255 * np.arange(0, GC) / GC))
     col += GC
 
     # CB
-    colorwheel[col:col + CB, 1] = 255 - np.transpose(np.floor(255 * np.arange(0, CB) / CB))
-    colorwheel[col:col + CB, 2] = 255
+    colorwheel[col : col + CB, 1] = 255 - np.transpose(
+        np.floor(255 * np.arange(0, CB) / CB)
+    )
+    colorwheel[col : col + CB, 2] = 255
     col += CB
 
     # BM
-    colorwheel[col:col + BM, 2] = 255
-    colorwheel[col:col + BM, 0] = np.transpose(np.floor(255 * np.arange(0, BM) / BM))
-    col += + BM
+    colorwheel[col : col + BM, 2] = 255
+    colorwheel[col : col + BM, 0] = np.transpose(np.floor(255 * np.arange(0, BM) / BM))
+    col += +BM
 
     # MR
-    colorwheel[col:col + MR, 2] = 255 - np.transpose(np.floor(255 * np.arange(0, MR) / MR))
-    colorwheel[col:col + MR, 0] = 255
+    colorwheel[col : col + MR, 2] = 255 - np.transpose(
+        np.floor(255 * np.arange(0, MR) / MR)
+    )
+    colorwheel[col : col + MR, 0] = 255
 
     return colorwheel
 
@@ -147,10 +169,10 @@ def flow_to_png_middlebury(flow):
     u = flow[:, :, 0]
     v = flow[:, :, 1]
 
-    maxu = -999.
-    maxv = -999.
-    minu = 999.
-    minv = 999.
+    maxu = -999.0
+    maxv = -999.0
+    minu = 999.0
+    minv = 999.0
 
     idxUnknow = (abs(u) > UNKNOWN_FLOW_THRESH) | (abs(v) > UNKNOWN_FLOW_THRESH)
     u[idxUnknow] = 0
@@ -186,7 +208,7 @@ def np_flow2rgb(flow_map, max_value=None):
         normalized_flow_map = flow_map / max_value
     else:
         normalized_flow_map = flow_map / (np.abs(flow_map).max())
-    
+
     rgb_map[:, :, 0] += normalized_flow_map[0]
     rgb_map[:, :, 1] -= 0.5 * (normalized_flow_map[0] + normalized_flow_map[1])
     rgb_map[:, :, 2] += normalized_flow_map[1]

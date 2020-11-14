@@ -6,9 +6,16 @@ import matplotlib.pyplot as plt
 import skimage.io as io
 from skimage.color import rgb2gray
 import math
+import torch.functional as tf
 
-from utils_misc import flow_to_png_middlebury, read_png_flow, read_png_depth
-from utils_misc import numpy2torch, pixel2pts_ms
+from .utils_misc import (
+    flow_to_png_middlebury,
+    read_png_flow,
+    read_png_depth,
+    numpy2torch,
+    pixel2pts_ms,
+    get_pixelgrid,
+)
 
 width_to_focal = dict()
 width_to_focal[1242] = 721.5377
@@ -18,28 +25,81 @@ width_to_focal[1238] = 718.3351
 width_to_focal[1226] = 707.0912
 
 cam_center_dict = dict()
-cam_center_dict[1242] = [6.095593e+02, 1.728540e+02]
-cam_center_dict[1241] = [6.071928e+02, 1.852157e+02]
-cam_center_dict[1224] = [6.040814e+02, 1.805066e+02]
-cam_center_dict[1238] = [6.003891e+02, 1.815122e+02]
-cam_center_dict[1226] = [6.018873e+02, 1.831104e+02]
+cam_center_dict[1242] = [6.095593e02, 1.728540e02]
+cam_center_dict[1241] = [6.071928e02, 1.852157e02]
+cam_center_dict[1224] = [6.040814e02, 1.805066e02]
+cam_center_dict[1238] = [6.003891e02, 1.815122e02]
+cam_center_dict[1226] = [6.018873e02, 1.831104e02]
 
 
 ########
-sampling = [4,20,25,35,40]
-imgflag = 1 # 0 is image, 1 is flow
+sampling = [4, 20, 25, 35, 40]
+imgflag = 1  # 0 is image, 1 is flow
 ########
 
+
+def warping_demo(img_idx, image_dir, results_dir, tt):
+
+    idx_curr = "%06d" % (img_idx)
+
+    im1_np0 = (
+        io.imread(os.path.join(image_dir, "image_2/" + idx_curr + "_10.png"))
+        / np.float32(255.0)
+    )[110:, :, :]
+    flo_f_np0 = read_png_flow(os.path.join(result_dir, "flow/" + idx_curr + "_10.png"))[
+        110:, :, :
+    ]
+    disp1_np0 = read_png_depth(
+        os.path.join(result_dir, "disp_0/" + idx_curr + "_10.png")
+    )[110:, :, :]
+    disp2_np0 = read_png_depth(
+        os.path.join(result_dir, "disp_1/" + idx_curr + "_10.png")
+    )[110:, :, :]
+
+    im1 = numpy2torch(im1_np0).unsqueeze(0)
+    disp1 = numpy2torch(disp1_np0).unsqueeze(0)
+    disp_diff = numpy2torch(disp2_np0).unsqueeze(0)
+    flo_f = numpy2torch(flo_f_np0).unsqueeze(0)
+
+    _, _, hh, ww = im1.size()
+
+    ## Intrinsic
+    focal_length = width_to_focal[ww]
+    cx = cam_center_dict[ww][0]
+    cy = cam_center_dict[ww][1]
+
+    k1_np = np.array([[focal_length, 0, cx], [0, focal_length, cy], [0, 0, 1]])
+    k1 = numpy2torch(k1_np)
+
+    # pixel_grid
+    b, _, h, w = disp_diff.shape
+    pixel_grid = get_pixelgrid(b, h, w, flo_f)
+    x_warp = tf.grid_sampel(im1_np0, pixel_grid)
+
+    # Forward warping Pts1 using disp_change and flow
+
+    # pts1 = pixel2pts_ms(disp1, k1)
+    # pts1_warp = pixel2pts_ms(disp_diff, k1, flo_f)
+    # Sf = pts1_warp - pts1
 
 
 def get_pcd(img_idx, image_dir, result_dir, tt):
 
-    idx_curr = '%06d' % (img_idx)
+    idx_curr = "%06d" % (img_idx)
 
-    im1_np0 = (io.imread(os.path.join(image_dir, "image_2/" + idx_curr + "_10.png")) / np.float32(255.0))[110:, :, :]
-    flo_f_np0 = read_png_flow(os.path.join(result_dir, "flow/" + idx_curr + "_10.png"))[110:, :, :]
-    disp1_np0 = read_png_depth(os.path.join(result_dir, "disp_0/" + idx_curr + "_10.png"))[110:, :, :]
-    disp2_np0 = read_png_depth(os.path.join(result_dir, "disp_1/" + idx_curr + "_10.png"))[110:, :, :]
+    im1_np0 = (
+        io.imread(os.path.join(image_dir, "image_2/" + idx_curr + "_10.png"))
+        / np.float32(255.0)
+    )[110:, :, :]
+    flo_f_np0 = read_png_flow(os.path.join(result_dir, "flow/" + idx_curr + "_10.png"))[
+        110:, :, :
+    ]
+    disp1_np0 = read_png_depth(
+        os.path.join(result_dir, "disp_0/" + idx_curr + "_10.png")
+    )[110:, :, :]
+    disp2_np0 = read_png_depth(
+        os.path.join(result_dir, "disp_1/" + idx_curr + "_10.png")
+    )[110:, :, :]
 
     im1 = numpy2torch(im1_np0).unsqueeze(0)
     disp1 = numpy2torch(disp1_np0).unsqueeze(0)
@@ -57,20 +117,25 @@ def get_pcd(img_idx, image_dir, result_dir, tt):
     k1 = numpy2torch(k1_np)
 
     # Forward warping Pts1 using disp_change and flow
+    # ? disp_change
     pts1 = pixel2pts_ms(disp1, k1)
     pts1_warp = pixel2pts_ms(disp_diff, k1, flo_f)
     sf = pts1_warp - pts1
 
     ## Composing Image
     im1_np0_g = np.repeat(np.expand_dims(rgb2gray(im1_np0), axis=2), 3, axis=2)
-    flow = torch.cat((sf[:, 0:1, :, :], sf[:, 2:3, :, :]), dim=1).data.cpu().numpy()[0, :, :, :]
+    flow = (
+        torch.cat((sf[:, 0:1, :, :], sf[:, 2:3, :, :]), dim=1)
+        .data.cpu()
+        .numpy()[0, :, :, :]
+    )
     flow_img = flow_to_png_middlebury(flow) / np.float32(255.0)
-    
+
     if imgflag == 0:
         flow_img = im1_np0
     else:
-        flow_img = (flow_img * 0.75 + im1_np0_g * 0.25)
-    
+        flow_img = flow_img * 0.75 + im1_np0_g * 0.25
+
     ## Crop
     max_crop = np.array([60, 0.7, 82])
     min_crop = np.array([-60, -20, 0])
@@ -94,7 +159,7 @@ def get_pcd(img_idx, image_dir, result_dir, tt):
     bb_colors = np.concatenate((wp, wp, wp, wp, wp, wp, wp, wp), axis=0)
 
     ## Open3D Vis
-    pts1_tform = pts1 + sf*tt
+    pts1_tform = pts1 + sf * tt
     pts1_np = np.transpose(pts1_tform[0].view(3, -1).data.numpy(), (1, 0))
     pts1_np = np.concatenate((pts1_np, bb_pts), axis=0)
     pts1_color = np.reshape(flow_img, (hh * ww, 3))
@@ -125,36 +190,45 @@ def custom_vis(imglist, kitti_data_dir, result_dir, vis_dir):
         ## Capture
         depth = vis.capture_depth_float_buffer(False)
         image = vis.capture_screen_float_buffer(False)
-        save_id = imglist[glb.index-1]
+        save_id = imglist[glb.index - 1]
         file_name = ""
 
         if imgflag == 0:
-            file_name = os.path.join(vis_dir, "{:06d}_{:02d}.png".format(save_id, glb.index))
+            file_name = os.path.join(
+                vis_dir, "{:06d}_{:02d}.png".format(save_id, glb.index)
+            )
         else:
-            file_name = os.path.join(vis_dir, "{:06d}_{:02d}.png".format(save_id, glb.index))
+            file_name = os.path.join(
+                vis_dir, "{:06d}_{:02d}.png".format(save_id, glb.index)
+            )
 
-        print(' ' + str(glb.index) + ' '+ str(save_id) + ' '+ file_name)
+        print(" " + str(glb.index) + " " + str(save_id) + " " + file_name)
         plt.imsave(file_name, np.asarray(image), dpi=1)
 
         ## Rendering
         max_d_x = 13
         max_d_y = 4
-        
+
         if glb.index < sampling[0]:
             tt = 0
             rx = 0
             ry = 0
-        elif glb.index < sampling[1]: # only rotation
-            tt = 0 
-            rad = 2 * 3.14159265359 / (sampling[1] - sampling[0]) * (glb.index - sampling[0])
+        elif glb.index < sampling[1]:  # only rotation
+            tt = 0
+            rad = (
+                2
+                * 3.14159265359
+                / (sampling[1] - sampling[0])
+                * (glb.index - sampling[0])
+            )
             rx = max_d_x * math.sin(rad)
-            ry = (max_d_y * math.cos(rad) - max_d_y)
+            ry = max_d_y * math.cos(rad) - max_d_y
         elif glb.index < sampling[2]:
             tt = 0
             rx = 0
             ry = 0
         elif glb.index < sampling[3]:
-            tt = (glb.index - sampling[2]) / (sampling[3] - sampling[2]) 
+            tt = (glb.index - sampling[2]) / (sampling[3] - sampling[2])
             rx = 0
             ry = 0
         else:
@@ -173,7 +247,7 @@ def custom_vis(imglist, kitti_data_dir, result_dir, vis_dir):
         ctr = vis.get_view_control()
         ctr.scale(-24)
 
-        ctr.rotate(rx, 980.0  + ry, 0, 0)
+        ctr.rotate(rx, 980.0 + ry, 0, 0)
         ctr.translate(-5, 0)
 
         if not glb.index < len(imglist):
@@ -193,11 +267,12 @@ def custom_vis(imglist, kitti_data_dir, result_dir, vis_dir):
     vis.run()
     vis.destroy_window()
 
+
 ########################################################################
 
-kitti_data_dir = "kitti_img"    ## raw KITTI image
-result_dir = "results"          ## disp_0, disp_1, flow
-vis_dir = "vis"                 ## visualization output folder
+kitti_data_dir = "kitti_img"  ## raw KITTI image
+result_dir = "results"  ## disp_0, disp_1, flow
+vis_dir = "vis"  ## visualization output folder
 
 imglist = []
 
