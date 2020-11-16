@@ -194,7 +194,7 @@ def get_pixelgrid(b, h, w, flow=None, direction="forward"):
     return pixelgrid
 
 
-def pixel2pts(depth, intrinsic, flow=None):
+def pixel2pts(depth, intrinsic, rotation=None, C=None, flow=None):
 
     b, _, h, w = depth.size()
     # * get heterogenous coordinates
@@ -205,6 +205,11 @@ def pixel2pts(depth, intrinsic, flow=None):
 
     # * back-projection
     pts_mat = torch.matmul(torch.inverse(intrinsic), pixel_mat) * depth_mat
+
+    if rotation != None and C != None:
+        pts_mat = depth_mat * pts_mat @ rotation + C
+    else:
+        pts_mat *= depth_mat
 
     pts = pts_mat.view(b, -1, h, w)
 
@@ -220,7 +225,7 @@ def pts2pixel(pts, intrinsics, flow=None):
     """
     b, _, h, w = pts.size()
     proj_pts = torch.matmul(intrinsics, pts.view(b, 3, -1))
-    pixels_mat = proj_pts.div(proj_pts[:, 2:3, :] + 1e-8)[:, 0:2, :]  # devide w
+    pixels_mat = proj_pts.div(proj_pts[:, 2:3, :] + 1e-8)[:, 0:2, :]  # devide z
 
     return pixels_mat.view(b, 2, h, w)
 
@@ -244,10 +249,10 @@ def disp2depth_kitti(pred_disp, focal_length):
     return pred_depth
 
 
-def pixel2pts_ms(output_disp, intrinsic, flow=None):
+def pixel2pts_ms(output_disp, intrinsic, rotation=None, C=None, flow=None):
     focal_length = intrinsic[:, 0, 0]
     output_depth = disp2depth_kitti(output_disp, focal_length)
-    pts, _ = pixel2pts(output_depth, intrinsic, flow)
+    pts, _ = pixel2pts(output_depth, intrinsic, rotation=rotation, C=C, flow=flow)
     return pts
 
 
